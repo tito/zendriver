@@ -13,8 +13,9 @@ This script will:
 - Read pyproject.toml to automatically determine the new version number
 - Update pyproject.toml with the new version number
 - Update zendriver/_version.py with the new version number
+- Run `uv sync` to update the lock file
 - Update CHANGELOG.md, creating a new section for the release and moving unreleased changes there
-- Commit and push changes to pyproject.toml, zendriver/_version.py, and CHANGELOG.md
+- Commit and push changes to pyproject.toml, uv.lock, zendriver/_version.py, and CHANGELOG.md
 - Create and push a git tag for the new version
 - Create a new release on GitHub ($GITHUB_TOKEN environment variable must be set)
 
@@ -66,9 +67,12 @@ def set_working_directory() -> None:
     os.chdir(REPO_ROOT)
 
 
-def ensure_clean_working_directory() -> None:
+def ensure_clean_working_directory(message: str | None = None) -> None:
     if subprocess.run(["git", "diff", "--quiet"]).returncode != 0:
-        print("Error: Working directory is not clean, please commit or stash changes")
+        print(
+            message
+            or "Error: Working directory is not clean, please commit or stash changes"
+        )
         sys.exit(1)
 
 
@@ -135,6 +139,14 @@ def write_new_version_to_version_py(new_version: str, dryrun: bool) -> None:
     VERSION_PY.write_text(f'__version__ = "{new_version}"\n')
 
 
+def sync_lock_file(dryrun: bool) -> None:
+    if dryrun:
+        print("Would run `uv sync` to update the lock file")
+        return
+
+    subprocess.run(["uv", "sync"], check=True)
+
+
 def write_changelog(new_version: str, dryrun: bool) -> str:
     changelog_content = CHANGELOG_MD.read_text()
     match = re.search(CHANGELOG_MD_UNRELEASED_REGEX, changelog_content)
@@ -182,10 +194,15 @@ def commit_and_push_changes(new_version: str, dryrun: bool) -> None:
         print("Would commit and push changes to the repository")
         return
 
-    subprocess.run(
-        ["git", "add", "pyproject.toml", "CHANGELOG.md", "zendriver/_version.py"]
-    )
+    files_to_add = [
+        "pyproject.toml",
+        "uv.lock",
+        "CHANGELOG.md",
+        "zendriver/_version.py",
+    ]
+    subprocess.run(["git", "add"] + files_to_add)
     subprocess.run(["git", "commit", "-m", f"Bump version to {new_version}"])
+    ensure_clean_working_directory("Error: Working directory is not clean after commit")
     subprocess.run(["git", "push"])
 
 
@@ -266,6 +283,7 @@ def main() -> None:
     # create and push the new release
     write_new_version_to_pyproject(new_version, args.dryrun)
     write_new_version_to_version_py(new_version, args.dryrun)
+    sync_lock_file(args.dryrun)
     changelog = write_changelog(new_version, args.dryrun)
 
     show_diff()
