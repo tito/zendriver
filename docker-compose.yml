@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: tests/Dockerfile
     ports:
-      - 5914:5914 # VNC server port
+      - 5911:5911 # VNC server port
     volumes:
       - swayvnc-wayvnc-certs:/certs
       - ./tests:/app/tests
@@ -12,7 +12,7 @@ services:
     environment:
       - RENDER_GROUP_GID=107 # replace with GID of the group which owns the /dev/dri/renderD128 device
       - SWAY_RESOLUTION=1920x1080
-      - WAYVNC_PORT=5914
+      - WAYVNC_PORT=5911
       - WAYVNC_ENABLE_AUTH=true
       - WAYVNC_USERNAME=wayvnc
       - WAYVNC_PASSWORD=wayvnc
