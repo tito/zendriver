@@ -1,0 +1,50 @@
+import logging
+import os
+import signal
+from threading import Event
+from typing import AsyncGenerator
+
+import pytest
+
+import zendriver as zd
+
+logger = logging.getLogger(__name__)
+
+PAUSE_AFTER_TEST = os.getenv("ZENDRIVER_PAUSE_AFTER_TEST", "false") == "true"
+NEXT_TEST_EVENT = Event()
+
+
+@pytest.fixture
+async def browser() -> AsyncGenerator[zd.Browser, None]:
+    NEXT_TEST_EVENT.clear()
+    browser = await zd.start(
+        # use wayland for rendering instead of default X11 backend
+        browser_args=["--enable-features=UseOzonePlatform", "--ozone-platform=wayland"],
+    )
+    browser_pid = browser._process_pid
+    assert browser_pid is not None and browser_pid > 0
+    yield browser
+    if PAUSE_AFTER_TEST:
+        logger.info(
+            "Pausing after test. Send next test hotkey (default Mod+Return) to continue to next test"
+        )
+        NEXT_TEST_EVENT.wait()
+    await browser.stop()
+    assert browser._process_pid is None
+
+
+# signal handler for starting next test
+def handle_next_test(signum, frame):
+    if not PAUSE_AFTER_TEST:
+        logger.warning(
+            "Next test signal received, but ZENDRIVER_PAUSE_AFTER_TEST is not set."
+        )
+        logger.warning(
+            "To enable pausing after each test, set ZENDRIVER_PAUSE_AFTER_TEST=true"
+        )
+        return
+
+    NEXT_TEST_EVENT.set()
+
+
+signal.signal(signal.SIGUSR1, handle_next_test)

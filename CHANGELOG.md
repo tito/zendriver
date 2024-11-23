@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add automated testing framework! @stephanlensky
+  - For now, just a few tests are written, including one to test browserscan.com bot detection
+  - In the future, we can expand this test suite further (see [Zendriver#18](https://github.com/stephanlensky/zendriver/issues/18))
+- Add return type annotation to `Tab.get_content()` @stephanlensky
+
 ### Changed
 
 ### Removed

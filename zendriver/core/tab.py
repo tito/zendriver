@@ -887,7 +887,7 @@ class Tab(Connection):
         )
         return window_id, bounds
 
-    async def get_content(self):
+    async def get_content(self) -> str:
         """
         gets the current page source content (html)
         :return:
