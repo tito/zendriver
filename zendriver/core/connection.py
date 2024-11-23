@@ -20,6 +20,7 @@ from typing import (
 )
 
 import websockets
+import websockets.asyncio.client
 
 from .. import cdp
 from . import util
@@ -88,7 +89,7 @@ class Transaction(asyncio.Future):
         """
         super().__init__()
         self.__cdp_obj__ = cdp_obj
-        self.connection = None
+        self.connection: Connection | None = None
 
         self.method, *params = next(self.__cdp_obj__).values()
         if params:
@@ -189,7 +190,7 @@ class CantTouchThis(type):
 
 class Connection(metaclass=CantTouchThis):
     attached: bool = None
-    websocket: websockets.WebSocketClientProtocol
+    websocket: websockets.asyncio.client.ClientConnection | None = None
     _target: cdp.target.TargetInfo
 
     def __init__(
@@ -228,9 +229,7 @@ class Connection(metaclass=CantTouchThis):
 
     @property
     def closed(self):
-        if not self.websocket:
-            return True
-        return self.websocket.closed
+        return self.websocket is None
 
     def add_handler(
         self,
@@ -282,7 +281,7 @@ class Connection(metaclass=CantTouchThis):
         :return:
         """
 
-        if not self.websocket or self.websocket.closed:
+        if self.websocket is None:
             try:
                 self.websocket = await websockets.connect(
                     self.websocket_url,
@@ -308,11 +307,12 @@ class Connection(metaclass=CantTouchThis):
         """
         closes the websocket connection. should not be called manually by users.
         """
-        if self.websocket and not self.websocket.closed:
+        if self.websocket is not None:
             if self.listener and self.listener.running:
                 self.listener.cancel()
                 self.enabled_domains.clear()
             await self.websocket.close()
+            self.websocket = None
             logger.debug("\n❌ closed websocket connection to %s", self.websocket_url)
 
     async def sleep(self, t: Union[int, float] = 0.25):
@@ -335,7 +335,7 @@ class Connection(metaclass=CantTouchThis):
         """
         asyncio.ensure_future(self.send(cdp_obj))
 
-    async def wait(self, t: Union[int, float] = None):
+    async def wait(self, t: int | float | None = None):
         """
         waits until the event listener reports idle (no new events received in certain timespan).
         when `t` is provided, ensures waiting for `t` seconds, no matter what.
@@ -411,7 +411,7 @@ class Connection(metaclass=CantTouchThis):
         :return:
         """
         await self.aopen()
-        if not self.websocket or self.closed:
+        if self.websocket is None:
             return
         if self._owner:
             browser = self._owner
@@ -533,6 +533,9 @@ class Connection(metaclass=CantTouchThis):
         setattr(self, "_prep_expert_done", True)
 
     async def _send_oneshot(self, cdp_obj):
+        if self.websocket is None:
+            raise ValueError("no websocket connection")
+
         tx = Transaction(cdp_obj)
         tx.connection = self
         tx.id = -2
@@ -550,7 +553,7 @@ class Listener:
         self.connection = connection
         self.history = collections.deque()
         self.max_history = 1000
-        self.task: asyncio.Future = None
+        self.task: asyncio.Future | None = None
 
         # when in interactive mode, the loop is paused after each return
         # and when the next call is made, it might still have to process some events
@@ -594,6 +597,9 @@ class Listener:
 
     async def listener_loop(self):
         while True:
+            if self.connection.websocket is None:
+                raise ValueError("no websocket connection")
+
             try:
                 msg = await asyncio.wait_for(
                     self.connection.websocket.recv(), self.time_before_considered_idle
@@ -603,11 +609,13 @@ class Listener:
                 # breathe
                 # await asyncio.sleep(self.time_before_considered_idle / 10)
                 continue
-            except (Exception,) as e:
-                # break on any other exception
-                # which is mostly socket is closed or does not exist
-                # or is not allowed
-
+            except asyncio.CancelledError:
+                logger.debug(
+                    "task was cancelled while reading websocket, breaking loop"
+                )
+                break
+            except websockets.exceptions.ConnectionClosedError as e:
+                # break on connection closed
                 logger.debug(
                     "connection listener exception while reading websocket:\n%s", e
                 )
