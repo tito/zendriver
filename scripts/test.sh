@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
 set -e
-set -x
 
-uv run pytest tests
+command=( "$@" )
+if [ "${#command[@]}" -eq 0 ]; then
+  command=( "pytest" )
+fi
+
+set -x
+uv run "${command[@]}"
