@@ -20,8 +20,6 @@ services:
       # Proceed to the next test by sending Mod+Return over VNC
       - ZENDRIVER_PAUSE_AFTER_TEST=false
     privileged: true
-    devices:
-      - "/dev/dri/renderD128:/dev/dri/renderD128"
 
 volumes:
   swayvnc-wayvnc-certs:
