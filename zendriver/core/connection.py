@@ -505,8 +505,8 @@ class Connection(metaclass=CantTouchThis):
                 allow_unsafe_eval_blocked_by_csp=True,
             )
         )
-        if response and response.value:
-            ua = response.value
+        if response and response[0].value:
+            ua = response[0].value
             await self._send_oneshot(
                 cdp.network.set_user_agent_override(
                     user_agent=ua.replace("Headless", ""),
