@@ -1,6 +1,7 @@
-import warnings as _warnings
-from collections.abc import Mapping as _Mapping, Sequence as _Sequence
 import logging
+import warnings as _warnings
+from collections.abc import Mapping as _Mapping
+from collections.abc import Sequence as _Sequence
 
 __logger__ = logging.getLogger(__name__)
 
@@ -34,8 +35,6 @@ class ContraDict(dict):
 
     recursive action. dict assignments will be converted too.
     """
-
-    __module__ = None
 
     def __init__(self, *args, **kwargs):
         super().__init__()

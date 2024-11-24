@@ -87,7 +87,7 @@ async def start(
             host=host,
             port=port,
             expert=expert,
-            **kwargs,
+            **kwargs,  # type: ignore
         )
     from .browser import Browser
 
@@ -137,7 +137,7 @@ def free_port() -> int:
 
 
 def filter_recurse_all(
-    doc: T, predicate: Callable[[cdp.dom.Node, Element], bool]
+    doc: T, predicate: Union[Callable[[cdp.dom.Node], bool], Callable[[Element], bool]]
 ) -> List[T]:
     """
     test each child using predicate(child), and return all children for which predicate(child) == True
@@ -162,7 +162,9 @@ def filter_recurse_all(
     return out
 
 
-def filter_recurse(doc: T, predicate: Callable[[cdp.dom.Node, Element], bool]) -> T:
+def filter_recurse(
+    doc: T, predicate: Union[Callable[[cdp.dom.Node], bool], Callable[[Element], bool]]
+) -> T | None:
     """
     test each child using predicate(child), and return the first child of which predicate(child) == True
 
@@ -185,6 +187,8 @@ def filter_recurse(doc: T, predicate: Callable[[cdp.dom.Node, Element], bool]) -
             result = filter_recurse(child, predicate)
             if result:
                 return result
+
+    return None
 
 
 def circle(
@@ -247,11 +251,15 @@ async def html_from_tree(tree: Union[cdp.dom.Node, Element], target: zendriver.T
         for child in tree.children:
             if isinstance(child, Element):
                 out += await child.get_html()
-            else:
+            elif isinstance(child, cdp.dom.Node):
                 out += await target.send(
                     cdp.dom.get_outer_html(backend_node_id=child.backend_node_id)
                 )
-            out += await html_from_tree(child, target)
+            else:
+                out += child
+
+            if not isinstance(child, str):
+                out += await html_from_tree(child, target)
     return out
 
 

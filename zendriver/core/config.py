@@ -1,11 +1,12 @@
+import ctypes
 import logging
 import os
 import pathlib
 import secrets
 import sys
 import tempfile
-from typing import Union, List, Optional
 import zipfile
+from typing import List, Optional, Union
 
 __all__ = [
     "Config",
@@ -36,9 +37,9 @@ class Config:
         browser_args: Optional[List[str]] = AUTO,
         sandbox: Optional[bool] = True,
         lang: Optional[str] = "en-US",
-        host: str = AUTO,
-        port: int = AUTO,
-        expert: bool = AUTO,
+        host: str | None = AUTO,
+        port: int | None = AUTO,
+        expert: bool | None = AUTO,
         **kwargs: dict,
     ):
         """
@@ -94,7 +95,7 @@ class Config:
         self.host = host
         self.port = port
         self.expert = expert
-        self._extensions = []
+        self._extensions: list[PathLike] = []
         # when using posix-ish operating system and running as root
         # you must use no_sandbox = True, which in case is corrected here
         if is_posix and is_root() and sandbox:
@@ -241,13 +242,10 @@ def is_root():
     :return:
     :rtype:
     """
-    import ctypes
-    import os
-
-    try:
-        return os.getuid() == 0
-    except AttributeError:
+    if sys.platform == "win32":
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    else:
+        return os.getuid() == 0
 
 
 def temp_profile_dir():
@@ -256,14 +254,14 @@ def temp_profile_dir():
     return path
 
 
-def find_chrome_executable(return_all=False):
+def find_chrome_executable() -> PathLike:
     """
     Finds the chrome, beta, canary, chromium executable
     and returns the disk path
     """
     candidates = []
     if is_posix:
-        for item in os.environ.get("PATH").split(os.pathsep):
+        for item in os.environ["PATH"].split(os.pathsep):
             for subitem in (
                 "google-chrome",
                 "chromium",
@@ -279,17 +277,17 @@ def find_chrome_executable(return_all=False):
             ]
 
     else:
-        for item in map(
+        for item2 in map(
             os.environ.get,
             ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA", "PROGRAMW6432"),
         ):
-            if item is not None:
+            if item2 is not None:
                 for subitem in (
                     "Google/Chrome/Application",
                     "Google/Chrome Beta/Application",
                     "Google/Chrome Canary/Application",
                 ):
-                    candidates.append(os.sep.join((item, subitem, "chrome.exe")))
+                    candidates.append(os.sep.join((item2, subitem, "chrome.exe")))
     rv = []
     for candidate in candidates:
         if os.path.exists(candidate) and os.access(candidate, os.X_OK):
@@ -302,9 +300,6 @@ def find_chrome_executable(return_all=False):
             )
 
     winner = None
-
-    if return_all and rv:
-        return rv
 
     if rv and len(rv) > 1:
         # assuming the shortest path wins

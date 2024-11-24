@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import datetime
 import json
 import logging
 import pathlib
 import secrets
 import typing
+import urllib.parse
 
+from .. import cdp
 from . import util
 from ._contradict import ContraDict
 from .config import PathLike
-from .. import cdp
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +42,7 @@ def create(node: cdp.dom.Node, tab: Tab, tree: typing.Optional[cdp.dom.Node] = N
 
 
 class Element:
-    def __init__(self, node: cdp.dom.Node, tab: Tab, tree: cdp.dom.Node = None):
+    def __init__(self, node: cdp.dom.Node, tab: Tab, tree: cdp.dom.Node | None = None):
         """
         Represents an (HTML) DOM Element
 
@@ -57,7 +60,7 @@ class Element:
         self._node = node
         self._tree = tree
         self._parent = None
-        self._remote_object = None
+        self._remote_object: typing.Any | None = None
         self._attrs = ContraDict(silent=True)
         self._make_attrs()
 
@@ -308,9 +311,8 @@ class Element:
         return self._node
 
     @property
-    def tree(self) -> cdp.dom.Node:
+    def tree(self) -> cdp.dom.Node | None:
         return self._tree
-        # raise RuntimeError("you should first call  `await update()` on this object to populate it's tree")
 
     @tree.setter
     def tree(self, tree: cdp.dom.Node):
@@ -357,7 +359,7 @@ class Element:
             # the .content_document property, which is of more
             # use than the node itself
             frame = self._node.content_document
-            if not frame.child_node_count:
+            if not frame or not frame.children or not frame.child_node_count:
                 return []
             for child in frame.children:
                 child_elem = create(child, self._tab, frame)
@@ -375,15 +377,14 @@ class Element:
         return _children
 
     @property
-    def remote_object(self) -> cdp.runtime.RemoteObject:
+    def remote_object(self) -> cdp.runtime.RemoteObject | None:
         return self._remote_object
 
     @property
-    def object_id(self) -> cdp.runtime.RemoteObjectId:
-        try:
-            return self.remote_object.object_id
-        except AttributeError:
-            pass
+    def object_id(self) -> cdp.runtime.RemoteObjectId | None:
+        if not self.remote_object:
+            return None
+        return self.remote_object.object_id
 
     async def click(self):
         """
@@ -478,15 +479,14 @@ class Element:
         elif result[1]:
             return result[1]
 
-    async def get_position(self, abs=False) -> Position:
-        if not self.parent or not self.object_id:
+    async def get_position(self, abs=False) -> Position | None:
+        if not self._remote_object or not self.parent or not self.object_id:
             self._remote_object = await self._tab.send(
                 cdp.dom.resolve_node(backend_node_id=self.backend_node_id)
             )
-            # await self.update()
         try:
             quads = await self.tab.send(
-                cdp.dom.get_content_quads(object_id=self.remote_object.object_id)
+                cdp.dom.get_content_quads(object_id=self._remote_object.object_id)
             )
             if not quads:
                 raise Exception("could not find position for %s " % self)
@@ -504,6 +504,7 @@ class Element:
                 "no content quads for %s. mostly caused by element which is not 'in plain sight'"
                 % self
             )
+            return None
 
     async def mouse_click(
         self,
@@ -523,14 +524,11 @@ class Element:
         :return:
 
         """
-        try:
-            center = (await self.get_position()).center
-        except AttributeError:
+        position = await self.get_position()
+        if not position:
+            logger.warning("could not find location for %s, not clicking", self)
             return
-        if not center:
-            logger.warning("could not calculate box model for %s", self)
-            return
-
+        center = position.center
         logger.debug("clicking on location %.2f, %.2f" % center)
 
         await asyncio.gather(
@@ -565,11 +563,11 @@ class Element:
     async def mouse_move(self):
         """moves mouse (not click), to element position. when an element has an
         hover/mouseover effect, this would trigger it"""
-        try:
-            center = (await self.get_position()).center
-        except AttributeError:
-            logger.debug("did not find location for %s", self)
+        position = await self.get_position()
+        if not position:
+            logger.warning("could not find location for %s, not moving mouse", self)
             return
+        center = position.center
         logger.debug(
             "mouse move to location %.2f, %.2f where %s is located", *center, self
         )
@@ -604,22 +602,20 @@ class Element:
         :return:
         :rtype:
         """
-        try:
-            start_point = (await self.get_position()).center
-        except AttributeError:
+        start_position = await self.get_position()
+        if not start_position:
+            logger.warning("could not find location for %s, not dragging", self)
             return
-        if not start_point:
-            logger.warning("could not calculate box model for %s", self)
-            return
+        start_point = start_position.center
         end_point = None
         if isinstance(destination, Element):
-            try:
-                end_point = (await destination.get_position()).center
-            except AttributeError:
+            end_position = await destination.get_position()
+            if not end_position:
+                logger.warning(
+                    "could not calculate box model for %s, not dragging", destination
+                )
                 return
-            if not end_point:
-                logger.warning("could not calculate box model for %s", destination)
-                return
+            end_point = end_position.center
         elif isinstance(destination, (tuple, list)):
             if relative:
                 end_point = (
@@ -687,7 +683,7 @@ class Element:
 
         # await self.apply("""(el) => el.scrollIntoView(false)""")
 
-    async def clear_input(self, _until_event: type = None):
+    async def clear_input(self):
         """clears an input field"""
         return await self.apply('function (element) { element.value = "" } ')
 
@@ -719,10 +715,10 @@ class Element:
         `await fileinputElement.send_file('c:/temp/image.png', 'c:/users/myuser/lol.gif')`
 
         """
-        file_paths = [str(p) for p in file_paths]
+        file_paths_as_str = [str(p) for p in file_paths]
         await self._tab.send(
             cdp.dom.set_file_input_files(
-                files=[*file_paths],
+                files=[*file_paths_as_str],
                 backend_node_id=self.backend_node_id,
                 object_id=self.object_id,
             )
@@ -744,8 +740,8 @@ class Element:
         if self.node_name == "OPTION":
             await self.apply(
                 """
-                (o) => {  
-                    o.selected = true ; 
+                (o) => {
+                    o.selected = true ;
                     o.dispatchEvent(new Event('change', {view: window,bubbles: true}))
                 }
                 """
@@ -758,6 +754,8 @@ class Element:
         if not self.node_type == 3:
             if self.child_node_count == 1:
                 child_node = self.children[0]
+                if not isinstance(child_node, Element):
+                    raise RuntimeError("could only set value of text nodes")
                 await child_node.set_text(value)
                 await self.update()
                 return
@@ -811,11 +809,10 @@ class Element:
         await self.update()
         return await self.tab.query_selector(selector, self)
 
-    #
     async def save_screenshot(
         self,
         filename: typing.Optional[PathLike] = "auto",
-        format: typing.Optional[str] = "jpeg",
+        format: str = "jpeg",
         scale: typing.Optional[typing.Union[int, float]] = 1,
     ):
         """
@@ -832,11 +829,6 @@ class Element:
         :return: the path/filename of saved screenshot
         :rtype: str
         """
-
-        import urllib.parse
-        import datetime
-        import base64
-
         pos = await self.get_position()
         if not pos:
             raise RuntimeError(
@@ -895,18 +887,16 @@ class Element:
         """
         from .connection import ProtocolException
 
-        if not self.remote_object:
+        if not self._remote_object:
             try:
                 self._remote_object = await self.tab.send(
                     cdp.dom.resolve_node(backend_node_id=self.backend_node_id)
                 )
             except ProtocolException:
                 return
-        try:
-            pos = await self.get_position()
-
-        except (Exception,):
-            logger.debug("flash() : could not determine position")
+        pos = await self.get_position()
+        if pos is None:
+            logger.warning("flash() : could not determine position")
             return
 
         style = (
@@ -943,7 +933,7 @@ class Element:
                 _d.style = `{0:s}`;
                 _d.id = `{1:s}`;
                 document.body.insertAdjacentElement('afterBegin', _d);
-                                
+
                 setTimeout( () => document.getElementById('{1:s}').remove(), {2:d});
             }}
             """.format(
@@ -1035,8 +1025,8 @@ class Element:
         await self.apply(
             """
             function extractVid(vid) {{
-                    
-                      var duration = {duration:.1f}; 
+
+                      var duration = {duration:.1f};
                       var stream = vid.captureStream();
                       var mr = new MediaRecorder(stream, {{audio:true, video:true}})
                       mr.ondataavailable  = function(e) {{
@@ -1055,19 +1045,19 @@ class Element:
 
                           document.body.removeChild(link)
                        }}
-                       
+
                        mr.start()
                        vid.addEventListener('ended' , (e) => mr.stop())
                        vid.addEventListener('pause' , (e) => mr.stop())
                        vid.addEventListener('abort', (e) => mr.stop())
-                       
-                       
-                       if ( duration ) {{ 
+
+
+                       if ( duration ) {{
                             setTimeout(() => {{ vid.pause(); vid.play() }}, duration);
                        }}
                        vid['_recording'] = true
                   ;}}
-                
+
             """.format(
                 filename=f'"{filename}"' if filename else 'document.title + ".mp4"',
                 duration=int(duration * 1000) if duration else 0,
@@ -1091,9 +1081,10 @@ class Element:
                     if sav:
                         self.attrs[sav] = a
 
-    def __eq__(self, other: Element) -> bool:
-        # if other.__dict__.values() == self.__dict__.values():
-        #     return True
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Element):
+            return False
+
         if other.backend_node_id and self.backend_node_id:
             return other.backend_node_id == self.backend_node_id
 
@@ -1167,6 +1158,9 @@ async def resolve_node(tab: Tab, node_id: cdp.dom.NodeId):
     remote_obj: cdp.runtime.RemoteObject = await tab.send(
         cdp.dom.resolve_node(node_id=node_id)
     )
-    node_id: cdp.dom.NodeId = await tab.send(cdp.dom.request_node(remote_obj.object_id))
+    if remote_obj.object_id is None:
+        raise RuntimeError("could not resolve object")
+
+    node_id = await tab.send(cdp.dom.request_node(remote_obj.object_id))
     node: cdp.dom.Node = await tab.send(cdp.dom.describe_node(node_id))
     return node

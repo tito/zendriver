@@ -7,6 +7,7 @@ import json
 import logging
 import pathlib
 import pickle
+import re
 import shutil
 import urllib.parse
 import urllib.request
@@ -52,26 +53,26 @@ class Browser:
 
     """
 
-    _process: asyncio.subprocess.Process
-    _process_pid: int
-    _http: HTTPApi = None
-    _cookies: CookieJar = None
+    _process: asyncio.subprocess.Process | None
+    _process_pid: int | None
+    _http: HTTPApi | None = None
+    _cookies: CookieJar | None = None
 
     config: Config
-    connection: Connection
+    connection: Connection | None
 
     @classmethod
     async def create(
         cls,
-        config: Config = None,
+        config: Config | None = None,
         *,
-        user_data_dir: PathLike = None,
+        user_data_dir: PathLike | None = None,
         headless: bool = False,
-        browser_executable_path: PathLike = None,
-        browser_args: List[str] = None,
+        browser_executable_path: PathLike | None = None,
+        browser_args: List[str] | None = None,
         sandbox: bool = True,
-        host: str = None,
-        port: int = None,
+        host: str | None = None,
+        port: int | None = None,
         **kwargs,
     ) -> Browser:
         """
@@ -119,18 +120,21 @@ class Browser:
         self.config = config
 
         self.targets: List = []
-        """current targets (all types"""
-        self.info = None
+        """current targets (all types)"""
+        self.info: ContraDict | None = None
         self._target = None
         self._process = None
         self._process_pid = None
         self._keep_user_data_dir = None
         self._is_updating = asyncio.Event()
-        self.connection: Connection = None
+        self.connection = None
         logger.debug("Session object initialized: %s" % vars(self))
 
     @property
     def websocket_url(self):
+        if not self.info:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
+
         return self.info.webSocketDebuggerUrl
 
     @property
@@ -205,7 +209,7 @@ class Browser:
                 current_tab.target = target_info
 
         elif isinstance(event, cdp.target.TargetCreated):
-            target_info: cdp.target.TargetInfo = event.target_info
+            target_info = event.target_info
             from .tab import Tab
 
             new_target = Tab(
@@ -246,6 +250,9 @@ class Browser:
         :param new_window:  open new window
         :return: Page
         """
+        if not self.connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
+
         if new_tab or new_window:
             # creat new target using the browser session
             target_id = await self.connection.send(
@@ -264,13 +271,9 @@ class Browser:
 
         else:
             # first tab from browser.tabs
-            connection: tab.Tab = next(
-                filter(lambda item: item.type_ == "page", self.targets)
-            )
+            connection = next(filter(lambda item: item.type_ == "page", self.targets))
             # use the tab to navigate to new url
-            frame_id, loader_id, *_ = await connection.send(cdp.page.navigate(url))
-            # update the frame_id on the tab
-            connection.frame_id = frame_id
+            await connection.send(cdp.page.navigate(url))
             connection.browser = self
 
         await connection.sleep(0.25)
@@ -279,16 +282,16 @@ class Browser:
     async def start(self) -> Browser:
         """launches the actual browser"""
         if not self:
-            warnings.warn("use ``await Browser.create()`` to create a new instance")
-            return
+            raise ValueError(
+                "Cannot be called as a class method. Use `await Browser.create()` to create a new instance"
+            )
 
         if self._process or self._process_pid:
-            if self._process.returncode is not None:
+            if self._process and self._process.returncode is not None:
                 return await self.create(config=self.config)
             warnings.warn("ignored! this call has no effect when already running.")
-            return
+            return self
 
-        # self.config.update(kwargs)
         connect_existing = False
         if self.config.host is not None and self.config.port is not None:
             connect_existing = True
@@ -401,9 +404,8 @@ class Browser:
                 self._handle_target_update
             ]
             await self.connection.send(cdp.target.set_discover_targets(discover=True))
-        await self
-        # self.connection.handlers[cdp.inspector.Detached] = [self.stop]
-        # return self
+        await self.update_targets()
+        return self
 
     async def grant_all_permissions(self):
         """
@@ -435,6 +437,9 @@ class Browser:
             wakeLockSystem
             windowManagement
         """
+        if not self.connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
+
         permissions = list(cdp.browser.PermissionType)
         permissions.remove(cdp.browser.PermissionType.FLASH)
         permissions.remove(cdp.browser.PermissionType.CAPTURED_SURFACE_CONTROL)
@@ -454,7 +459,7 @@ class Browser:
         if not screen or not screen_width or not screen_height:
             warnings.warn("no monitors detected")
             return
-        await self
+        await self.update_targets()
         distinct_windows = defaultdict(list)
 
         if windows:
@@ -499,6 +504,8 @@ class Browser:
         return grid
 
     async def _get_targets(self) -> List[cdp.target.TargetInfo]:
+        if not self.connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
         info = await self.connection.send(cdp.target.get_targets(), _is_update=True)
         return info
 
@@ -557,6 +564,9 @@ class Browser:
                     del self._i
 
     async def stop(self):
+        if not self.connection or not self._process:
+            return
+
         await self.connection.aclose()
         logger.debug("closed the connection")
 
@@ -598,10 +608,6 @@ class Browser:
                 await asyncio.sleep(0.15)
                 continue
 
-    def __await__(self):
-        # return ( asyncio.sleep(0)).__await__()
-        return self.update_targets().__await__()
-
     def __del__(self):
         pass
 
@@ -623,7 +629,7 @@ class CookieJar:
         :rtype:
 
         """
-        connection = None
+        connection: Connection | None = None
         for tab_ in self._browser.tabs:
             if tab_.closed:
                 continue
@@ -631,6 +637,9 @@ class CookieJar:
             break
         else:
             connection = self._browser.connection
+        if not connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
+
         cookies = await connection.send(cdp.storage.get_cookies())
         if requests_cookie_format:
             import requests.cookies
@@ -657,7 +666,7 @@ class CookieJar:
         :return:
         :rtype:
         """
-        connection = None
+        connection: Connection | None = None
         for tab_ in self._browser.tabs:
             if tab_.closed:
                 continue
@@ -665,6 +674,9 @@ class CookieJar:
             break
         else:
             connection = self._browser.connection
+        if not connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
+
         await connection.send(cdp.storage.set_cookies(cookies))
 
     async def save(self, file: PathLike = ".session.dat", pattern: str = ".*"):
@@ -685,11 +697,9 @@ class CookieJar:
         :return:
         :rtype:
         """
-        import re
-
-        pattern = re.compile(pattern)
+        compiled_pattern = re.compile(pattern)
         save_path = pathlib.Path(file).resolve()
-        connection = None
+        connection: Connection | None = None
         for tab_ in self._browser.tabs:
             if tab_.closed:
                 continue
@@ -697,6 +707,9 @@ class CookieJar:
             break
         else:
             connection = self._browser.connection
+        if not connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
+
         cookies = await connection.send(cdp.storage.get_cookies())
         # if not connection:
         #     return
@@ -707,10 +720,10 @@ class CookieJar:
         cookies = await self.get_all(requests_cookie_format=False)
         included_cookies = []
         for cookie in cookies:
-            for match in pattern.finditer(str(cookie.__dict__)):
+            for match in compiled_pattern.finditer(str(cookie.__dict__)):
                 logger.debug(
                     "saved cookie for matching pattern '%s' => (%s: %s)",
-                    pattern.pattern,
+                    compiled_pattern.pattern,
                     cookie.name,
                     cookie.value,
                 )
@@ -738,16 +751,16 @@ class CookieJar:
         """
         import re
 
-        pattern = re.compile(pattern)
+        compiled_pattern = re.compile(pattern)
         save_path = pathlib.Path(file).resolve()
         cookies = pickle.load(save_path.open("r+b"))
         included_cookies = []
         for cookie in cookies:
-            for match in pattern.finditer(str(cookie.__dict__)):
+            for match in compiled_pattern.finditer(str(cookie.__dict__)):
                 included_cookies.append(cookie)
                 logger.debug(
                     "loaded cookie for matching pattern '%s' => (%s: %s)",
-                    pattern.pattern,
+                    compiled_pattern.pattern,
                     cookie.name,
                     cookie.value,
                 )
@@ -763,7 +776,7 @@ class CookieJar:
         :return:
         :rtype:
         """
-        connection = None
+        connection: Connection | None = None
         for tab_ in self._browser.tabs:
             if tab_.closed:
                 continue
@@ -771,6 +784,9 @@ class CookieJar:
             break
         else:
             connection = self._browser.connection
+        if not connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
+
         await connection.send(cdp.storage.clear_cookies())
 
 
@@ -785,7 +801,7 @@ class HTTPApi:
     async def post(self, endpoint, data):
         return await self._request(endpoint, data)
 
-    async def _request(self, endpoint, method: str = "get", data: dict = None):
+    async def _request(self, endpoint, method: str = "get", data: dict | None = None):
         url = urllib.parse.urljoin(
             self.api, f"json/{endpoint}" if endpoint else "/json"
         )

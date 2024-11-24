@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import pathlib
 import typing
+import urllib.parse
 import warnings
-from typing import List, Optional, Tuple, Union
-
-import zendriver.core.browser
+import webbrowser
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
 
 from .. import cdp
 from . import element, util
 from .config import PathLike
 from .connection import Connection, ProtocolException
+
+if TYPE_CHECKING:
+    from .browser import Browser
+    from .element import Element
 
 logger = logging.getLogger(__name__)
 
@@ -116,14 +121,14 @@ class Tab(Connection):
     you can act upon.
     """
 
-    browser: zendriver.core.browser.Browser
-    _download_behavior: List[str] = None
+    browser: Browser | None
+    _download_behavior: List[str] | None = None
 
     def __init__(
         self,
         websocket_url: str,
         target: cdp.target.TargetInfo,
-        browser: Optional["zendriver.Browser"] = None,
+        browser: Browser | None = None,
         **kwargs,
     ):
         super().__init__(websocket_url, target, browser, **kwargs)
@@ -139,11 +144,14 @@ class Tab(Connection):
         :return:
         :rtype:
         """
+        if not self.browser:
+            raise ValueError(
+                "this tab has no browser attribute, so you can't use inspector_url"
+            )
+
         return f"http://{self.browser.config.host}:{self.browser.config.port}/devtools/inspector.html?ws={self.websocket_url[5:]}"
 
     def inspector_open(self):
-        import webbrowser
-
         webbrowser.open(self.inspector_url, new=2)
 
     async def open_external_inspector(self):
@@ -203,7 +211,7 @@ class Tab(Connection):
             text, best_match, return_enclosing_element
         )
         while not item:
-            await self
+            await self.wait()
             item = await self.find_element_by_text(
                 text, best_match, return_enclosing_element
             )
@@ -218,7 +226,7 @@ class Tab(Connection):
         self,
         selector: str,
         timeout: Union[int, float] = 10,
-    ) -> zendriver.Element:
+    ) -> Element:
         """
         find single element by css selector.
         can also be used to wait for such element to appear.
@@ -237,7 +245,7 @@ class Tab(Connection):
         item = await self.query_selector(selector)
 
         while not item:
-            await self
+            await self.wait()
             item = await self.query_selector(selector)
             if loop.time() - start_time > timeout:
                 raise asyncio.TimeoutError(
@@ -250,7 +258,7 @@ class Tab(Connection):
         self,
         text: str,
         timeout: Union[int, float] = 10,
-    ) -> List[zendriver.Element]:
+    ) -> List[Element]:
         """
         find multiple elements by text
         can also be used to wait for such element to appear.
@@ -268,7 +276,7 @@ class Tab(Connection):
         items = await self.find_elements_by_text(text)
 
         while not items:
-            await self
+            await self.wait()
             items = await self.find_elements_by_text(text)
             if loop.time() - now > timeout:
                 raise asyncio.TimeoutError(
@@ -279,7 +287,7 @@ class Tab(Connection):
 
     async def select_all(
         self, selector: str, timeout: Union[int, float] = 10, include_frames=False
-    ) -> List[zendriver.Element]:
+    ) -> List[Element]:
         """
         find multiple elements by css selector.
         can also be used to wait for such element to appear.
@@ -305,7 +313,7 @@ class Tab(Connection):
 
         items.extend(await self.query_selector_all(selector))
         while not items:
-            await self
+            await self.wait()
             items = await self.query_selector_all(selector)
             if loop.time() - now > timeout:
                 raise asyncio.TimeoutError(
@@ -338,14 +346,14 @@ class Tab(Connection):
         if new_tab:
             return await self.browser.get(url, new_tab, new_window)
         else:
-            frame_id, loader_id, *_ = await self.send(cdp.page.navigate(url))
-            await self
+            await self.send(cdp.page.navigate(url))
+            await self.wait()
             return self
 
     async def query_selector_all(
         self,
         selector: str,
-        _node: Optional[Union[cdp.dom.Node, "element.Element"]] = None,
+        _node: cdp.dom.Node | Element | None = None,
     ):
         """
         equivalent of javascripts document.querySelectorAll.
@@ -360,9 +368,9 @@ class Tab(Connection):
         :return:
         :rtype:
         """
-
+        doc: Any
         if not _node:
-            doc: cdp.dom.Node = await self.send(cdp.dom.get_document(-1, True))
+            doc = await self.send(cdp.dom.get_document(-1, True))
         else:
             doc = _node
             if _node.node_name == "IFRAME":
@@ -373,19 +381,18 @@ class Tab(Connection):
             node_ids = await self.send(
                 cdp.dom.query_selector_all(doc.node_id, selector)
             )
-
         except ProtocolException as e:
             if _node is not None:
-                if "could not find node" in e.message.lower():
+                if e.message is not None and "could not find node" in e.message.lower():
                     if getattr(_node, "__last", None):
-                        del _node.__last
+                        delattr(_node, "__last")
                         return []
                     # if supplied node is not found, the dom has changed since acquiring the element
                     # therefore we need to update our passed node and try again
-                    await _node.update()
-                    _node.__last = (
-                        True  # make sure this isn't turned into infinite loop
-                    )
+                    if isinstance(_node, Element):
+                        await _node.update()
+                    # make sure this isn't turned into infinite loop
+                    setattr(_node, "__last", True)
                     return await self.query_selector_all(selector, _node)
             else:
                 await self.send(cdp.dom.disable())
@@ -408,7 +415,7 @@ class Tab(Connection):
     async def query_selector(
         self,
         selector: str,
-        _node: Optional[Union[cdp.dom.Node, element.Element]] = None,
+        _node: Optional[Union[cdp.dom.Node, Element]] = None,
     ):
         """
         find single element based on css selector string
@@ -420,8 +427,9 @@ class Tab(Connection):
         """
         selector = selector.strip()
 
+        doc: Any
         if not _node:
-            doc: cdp.dom.Node = await self.send(cdp.dom.get_document(-1, True))
+            doc = await self.send(cdp.dom.get_document(-1, True))
         else:
             doc = _node
             if _node.node_name == "IFRAME":
@@ -433,16 +441,16 @@ class Tab(Connection):
 
         except ProtocolException as e:
             if _node is not None:
-                if "could not find node" in e.message.lower():
+                if e.message is not None and "could not find node" in e.message.lower():
                     if getattr(_node, "__last", None):
-                        del _node.__last
+                        delattr(_node, "__last")
                         return []
                     # if supplied node is not found, the dom has changed since acquiring the element
                     # therefore we need to update our passed node and try again
-                    await _node.update()
-                    _node.__last = (
-                        True  # make sure this isn't turned into infinite loop
-                    )
+                    if isinstance(_node, Element):
+                        await _node.update()
+                    # make sure this isn't turned into infinite loop
+                    setattr(_node, "__last", True)
                     return await self.query_selector(selector, _node)
             else:
                 await self.send(cdp.dom.disable())
@@ -458,7 +466,7 @@ class Tab(Connection):
         self,
         text: str,
         tag_hint: Optional[str] = None,
-    ) -> List[element.Element]:
+    ) -> list[Element]:
         """
         returns element which match the given text.
         please note: this may (or will) also return any other element (like inline scripts),
@@ -544,7 +552,7 @@ class Tab(Connection):
         text: str,
         best_match: Optional[bool] = False,
         return_enclosing_element: Optional[bool] = True,
-    ) -> Union[element.Element, None]:
+    ) -> Element | None:
         """
         finds and returns the first element containing <text>, or best match
 
@@ -573,6 +581,9 @@ class Tab(Connection):
         items = []
         for nid in node_ids:
             node = util.filter_recurse(doc, lambda n: n.node_id == nid)
+            if node is None:
+                continue
+
             try:
                 elem = element.create(node, self, doc)
             except:  # noqa
@@ -616,7 +627,7 @@ class Tab(Connection):
                     items.extend(text_node.parent for text_node in iframe_text_elems)
         try:
             if not items:
-                return
+                return None
             if best_match:
                 closest_by_length = min(
                     items, key=lambda el: abs(len(text) - len(el.text_all))
@@ -631,6 +642,8 @@ class Tab(Connection):
                         return elem
         finally:
             await self.send(cdp.dom.disable())
+
+        return None
 
     async def back(self):
         """
@@ -691,10 +704,7 @@ class Tab(Connection):
 
     async def js_dumps(
         self, obj_name: str, return_by_value: Optional[bool] = True
-    ) -> typing.Union[
-        typing.Dict,
-        typing.Tuple[cdp.runtime.RemoteObject, cdp.runtime.ExceptionDetails],
-    ]:
+    ) -> dict | typing.Tuple[cdp.runtime.RemoteObject, cdp.runtime.ExceptionDetails]:
         """
         dump given js object with its properties and values as a dict
 
@@ -838,7 +848,6 @@ class Tab(Connection):
         )
 
         # we're purposely not calling self.evaluate here to prevent infinite loop on certain expressions
-
         remote_object, exception_details = await self.send(
             cdp.runtime.evaluate(
                 js_code_a,
@@ -861,9 +870,8 @@ class Tab(Connection):
 
         if exception_details:
             raise ProtocolException(exception_details)
-        if return_by_value:
-            if remote_object.value:
-                return remote_object.value
+        if return_by_value and remote_object.value:
+            return remote_object.value
         else:
             return remote_object, exception_details
 
@@ -887,7 +895,7 @@ class Tab(Connection):
         )
         return window_id, bounds
 
-    async def get_content(self) -> str:
+    async def get_content(self):
         """
         gets the current page source content (html)
         :return:
@@ -940,6 +948,8 @@ class Tab(Connection):
         """
         active this target (ie: tab,window,page)
         """
+        if self.target is None:
+            raise ValueError("target is none")
         await self.send(cdp.target.activate_target(self.target.target_id))
 
     async def bring_to_front(self):
@@ -1064,9 +1074,9 @@ class Tab(Connection):
 
     async def wait_for(
         self,
-        selector: Optional[str] = "",
-        text: Optional[str] = "",
-        timeout: Optional[Union[int, float]] = 10,
+        selector: str | None = None,
+        text: str | None = None,
+        timeout: int | float = 10,
     ) -> element.Element:
         """
         variant on query_selector_all and find_elements_by_text
@@ -1087,28 +1097,25 @@ class Tab(Connection):
         :raises: asyncio.TimeoutError
         """
         loop = asyncio.get_running_loop()
-        now = loop.time()
+        start_time = loop.time()
         if selector:
             item = await self.query_selector(selector)
-            while not item:
+            while not item and loop.time() - start_time < timeout:
                 item = await self.query_selector(selector)
-                if loop.time() - now > timeout:
-                    raise asyncio.TimeoutError(
-                        "time ran out while waiting for %s" % selector
-                    )
                 await self.sleep(0.5)
-                # await self.sleep(0.5)
-            return item
+
+            if item:
+                return item
         if text:
             item = await self.find_element_by_text(text)
-            while not item:
+            while not item and loop.time() - start_time < timeout:
                 item = await self.find_element_by_text(text)
-                if loop.time() - now > timeout:
-                    raise asyncio.TimeoutError(
-                        "time ran out while waiting for text: %s" % text
-                    )
                 await self.sleep(0.5)
-            return item
+
+            if item:
+                return item
+
+        raise asyncio.TimeoutError("time ran out while waiting")
 
     async def download_file(self, url: str, filename: Optional[PathLike] = None):
         """
@@ -1172,8 +1179,8 @@ class Tab(Connection):
     async def save_screenshot(
         self,
         filename: Optional[PathLike] = "auto",
-        format: Optional[str] = "jpeg",
-        full_page: Optional[bool] = False,
+        format: str = "jpeg",
+        full_page: bool = False,
     ) -> str:
         """
         Saves a screenshot of the page.
@@ -1188,9 +1195,8 @@ class Tab(Connection):
         :return: the path/filename of saved screenshot
         :rtype: str
         """
-        # noqa
-        import datetime
-        import urllib.parse
+        if self.target is None:
+            raise ValueError("target is none")
 
         await self.sleep()  # update the target's url
         path = None
@@ -1241,6 +1247,7 @@ class Tab(Connection):
         :return:
         :rtype:
         """
+        path = pathlib.Path(path)
         await self.send(
             cdp.browser.set_download_behavior(
                 behavior="allow", download_path=str(path.resolve())
@@ -1248,7 +1255,7 @@ class Tab(Connection):
         )
         self._download_behavior = ["allow", str(path.resolve())]
 
-    async def get_all_linked_sources(self) -> List["zendriver.Element"]:
+    async def get_all_linked_sources(self) -> List[Element]:
         """
         get all elements of tag: link, a, img, scripts meta, video, audio
 
@@ -1298,6 +1305,8 @@ class Tab(Connection):
                 if checkbox:
                     break
                 parent = parent.parent
+        if not checkbox:
+            raise RuntimeError("could not find checkbox for cloudflare verification")
         await checkbox.mouse_move()
         await checkbox.mouse_click()
 
@@ -1308,8 +1317,8 @@ class Tab(Connection):
         :return:
         :rtype:
         """
-        if not self.target.url:
-            await self
+        if self.target is None or not self.target.url:
+            await self.wait()
 
         # there must be a better way...
         origin = "/".join(self.url.split("/", 3)[:-1])
@@ -1334,8 +1343,8 @@ class Tab(Connection):
         :return:
         :rtype:
         """
-        if not self.target.url:
-            await self
+        if self.target is None or not self.target.url:
+            await self.wait()
         # there must be a better way...
         origin = "/".join(self.url.split("/", 3)[:-1])
 
@@ -1356,9 +1365,9 @@ class Tab(Connection):
 
     def __call__(
         self,
-        text: Optional[str] = "",
-        selector: Optional[str] = "",
-        timeout: Optional[Union[int, float]] = 10,
+        text: str | None = None,
+        selector: str | None = None,
+        timeout: int | float = 10,
     ):
         """
         alias to query_selector_all or find_elements_by_text, depending
@@ -1371,11 +1380,11 @@ class Tab(Connection):
         """
         return self.wait_for(text, selector, timeout)
 
-    def __eq__(self, other: Tab):
-        try:
-            return other.target == self.target
-        except (AttributeError, TypeError):
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, Tab):
             return False
+
+        return other.target == self.target
 
     def __getattr__(self, item):
         try:
@@ -1387,7 +1396,7 @@ class Tab(Connection):
 
     def __repr__(self):
         extra = ""
-        if self.target.url:
+        if self.target is not None and self.target.url:
             extra = f"[url: {self.target.url}]"
         s = f"<{type(self).__name__} [{self.target_id}] [{self.type_}] {extra}>"
         return s

@@ -8,7 +8,8 @@ import json
 import logging
 import sys
 import types
-from asyncio import iscoroutine, iscoroutinefunction
+import typing
+from asyncio import iscoroutinefunction
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -76,20 +77,14 @@ class SettingClassVarNotAllowedException(PermissionError):
 
 
 class Transaction(asyncio.Future):
-    __cdp_obj__: Generator = None
-
-    method: str = None
-    params: dict = None
-
-    id: int = None
-
-    def __init__(self, cdp_obj: Generator):
+    def __init__(self, cdp_obj: Generator[dict[str, Any], dict[str, Any], Any]):
         """
         :param cdp_obj:
         """
         super().__init__()
         self.__cdp_obj__ = cdp_obj
         self.connection: Connection | None = None
+        self.id: int | None = None
 
         self.method, *params = next(self.__cdp_obj__).values()
         if params:
@@ -150,7 +145,7 @@ class EventTransaction(Transaction):
 
     def __init__(self, event_object):
         try:
-            super().__init__(None)
+            super().__init__(None)  # type: ignore
         except Exception:
             pass
         self.set_result(event_object)
@@ -189,15 +184,15 @@ class CantTouchThis(type):
 
 
 class Connection(metaclass=CantTouchThis):
-    attached: bool = None
+    attached: bool
     websocket: websockets.asyncio.client.ClientConnection | None = None
-    _target: cdp.target.TargetInfo
+    _target: cdp.target.TargetInfo | None
 
     def __init__(
         self,
         websocket_url: str,
-        target: cdp.target.TargetInfo = None,
-        _owner: Browser = None,
+        target: cdp.target.TargetInfo | None = None,
+        _owner: Browser | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -206,16 +201,18 @@ class Connection(metaclass=CantTouchThis):
         self._owner = _owner
         self.websocket_url: str = websocket_url
         self.websocket = None
-        self.mapper = {}
-        self.handlers = collections.defaultdict(list)
+        self.mapper: dict[int, Transaction] = {}
+        self.handlers: dict[Any, list[Union[Callable, Awaitable]]] = (
+            collections.defaultdict(list)
+        )
         self.recv_task = None
-        self.enabled_domains = []
-        self._last_result = []
-        self.listener: Listener = None
+        self.enabled_domains: list[Any] = []
+        self._last_result: list[Any] = []
+        self.listener: Listener | None = None
         self.__dict__.update(**kwargs)
 
     @property
-    def target(self) -> cdp.target.TargetInfo:
+    def target(self) -> cdp.target.TargetInfo | None:
         return self._target
 
     @target.setter
@@ -345,6 +342,9 @@ class Connection(metaclass=CantTouchThis):
         :return:
         :rtype:
         """
+        if not self.listener:
+            raise ValueError("No listener created yet")
+
         await self.update_target()
         loop = asyncio.get_running_loop()
         start_time = loop.time()
@@ -435,6 +435,7 @@ class Connection(metaclass=CantTouchThis):
             try:
                 return await tx
             except ProtocolException as e:
+                e.message = e.message or ""
                 e.message += f"\ncommand:{tx.method}\nparams:{tx.params}"
                 raise e
         except Exception:
@@ -454,12 +455,12 @@ class Connection(metaclass=CantTouchThis):
         # are not represented by handlers, and can be removed
         enabled_domains = self.enabled_domains.copy()
         for event_type in self.handlers.copy():
-            domain_mod = None
             if len(self.handlers[event_type]) == 0:
                 self.handlers.pop(event_type)
                 continue
-            if isinstance(event_type, type):
-                domain_mod = util.cdp_get_module(event_type.__module__)
+            if not isinstance(event_type, type):
+                continue
+            domain_mod = util.cdp_get_module(event_type.__module__)
             if domain_mod in self.enabled_domains:
                 # at this point, the domain is being used by a handler
                 # so remove that domain from temp variable 'enabled_domains' if present
@@ -551,7 +552,7 @@ class Connection(metaclass=CantTouchThis):
 class Listener:
     def __init__(self, connection: Connection):
         self.connection = connection
-        self.history = collections.deque()
+        self.history: collections.deque = collections.deque()
         self.max_history = 1000
         self.task: asyncio.Future | None = None
 
@@ -645,8 +646,9 @@ class Listener:
                     tx(**message)
                 else:
                     if message["id"] == -2:
-                        tx = self.connection.mapper.get(-2)
-                        if tx:
+                        maybe_tx = self.connection.mapper.get(-2)
+                        if maybe_tx:
+                            tx = maybe_tx
                             tx(**message)
                         continue
             else:
@@ -677,12 +679,13 @@ class Listener:
                         continue
                     for callback in callbacks:
                         try:
-                            if iscoroutinefunction(callback) or iscoroutine(callback):
+                            if iscoroutinefunction(callback):
                                 try:
                                     await callback(event, self.connection)
                                 except TypeError:
                                     await callback(event)
                             else:
+                                callback = typing.cast(Callable, callback)
                                 try:
                                     callback(event, self.connection)
                                 except TypeError:
