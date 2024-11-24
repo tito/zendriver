@@ -14,12 +14,13 @@ PAUSE_AFTER_TEST = os.getenv("ZENDRIVER_PAUSE_AFTER_TEST", "false") == "true"
 NEXT_TEST_EVENT = Event()
 
 
-@pytest.fixture
-async def browser() -> AsyncGenerator[zd.Browser, None]:
+@pytest.fixture(params=[{"headless": True}, {"headless": False}])
+async def browser(request: pytest.FixtureRequest) -> AsyncGenerator[zd.Browser, None]:
     NEXT_TEST_EVENT.clear()
     browser = await zd.start(
         # use wayland for rendering instead of default X11 backend
         browser_args=["--enable-features=UseOzonePlatform", "--ozone-platform=wayland"],
+        headless=request.param["headless"],
     )
     browser_pid = browser._process_pid
     assert browser_pid is not None and browser_pid > 0
