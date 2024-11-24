@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fix `AttributeError: 'tuple' object has no attribute 'value'` error in `connection.py` when using headless browser, @slimshreydy
-
 ### Added
 
 ### Changed
 
 ### Removed
+
+## [0.2.2] - 2024-11-23
+
+### Fixed
+
+- Fix `AttributeError: 'tuple' object has no attribute 'value'` error in `connection.py` when using headless browser, @slimshreydy
 
 ## [0.2.1] - 2024-11-23
 
