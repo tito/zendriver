@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Removed
+
+## [0.2.1] - 2024-11-23
+
+### Added
+
 - Add automated testing framework! @stephanlensky
   - For now, just a few tests are written, including one to test browserscan.com bot detection
   - In the future, we can expand this test suite further (see [Zendriver#18](https://github.com/stephanlensky/zendriver/issues/18))
@@ -19,8 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Upgraded `websockets` to latest version (`>=14.0`) @yoori @stephanlensky
-
-### Removed
 
 ## [0.2.0] - 2024-11-17
 
