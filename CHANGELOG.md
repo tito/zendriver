@@ -9,16 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+### Added
+
+### Changed
+
+### Removed
+
+## [0.2.3] - 2024-12-14
+
+### Fixed
+
 - Fixed mypy linting errors (attempt 2) @stephanlensky
 
 ### Added
 
 - Handle browser process shutdown on 'Failed to connect to browser' @desoul99
 - Added configurable browser connection timeout and tries @desoul99
-
-### Changed
-
-### Removed
 
 ## [0.2.2] - 2024-11-23
 
