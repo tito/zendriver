@@ -349,18 +349,18 @@ class Browser:
 
         self._http = HTTPApi((self.config.host, self.config.port))
         util.get_registered_instances().add(self)
-        await asyncio.sleep(0.25)
-        for _ in range(5):
+        await asyncio.sleep(self.config.browser_connection_timeout)
+        for attempt in range(self.config.browser_connection_max_tries):
             try:
                 self.info = ContraDict(await self._http.get("version"), silent=True)
-            except (Exception,):
-                if _ == 4:
-                    logger.debug("could not start", exc_info=True)
-                await self.sleep(0.5)
-            else:
-                break
+                break  # Exit loop if successful
+            except Exception:
+                if attempt == self.config.browser_connection_max_tries - 1:
+                    logger.debug("Could not start", exc_info=True)
+                await asyncio.sleep(self.config.browser_connection_timeout)
 
         if not self.info:
+            await self.stop()
             raise Exception(
                 (
                     """
@@ -564,27 +564,29 @@ class Browser:
                     del self._i
 
     async def stop(self):
-        if not self.connection or not self._process:
+        if not self.connection and not self._process:
             return
 
-        await self.connection.aclose()
-        logger.debug("closed the connection")
+        if self.connection:
+            await self.connection.aclose()
+            logger.debug("closed the connection")
 
-        self._process.terminate()
-        logger.debug("gracefully stopping browser process")
-        # wait 3 seconds for the browser to stop
-        for _ in range(12):
-            if self._process.returncode is not None:
-                break
-            await asyncio.sleep(0.25)
-        else:
-            logger.debug("browser process did not stop. killing it")
-            self._process.kill()
-            logger.debug("killed browser process")
+        if self._process:
+            self._process.terminate()
+            logger.debug("gracefully stopping browser process")
+            # wait 3 seconds for the browser to stop
+            for _ in range(12):
+                if self._process.returncode is not None:
+                    break
+                await asyncio.sleep(0.25)
+            else:
+                logger.debug("browser process did not stop. killing it")
+                self._process.kill()
+                logger.debug("killed browser process")
 
-        await self._process.wait()
-        self._process = None
-        self._process_pid = None
+            await self._process.wait()
+            self._process = None
+            self._process_pid = None
 
     async def _cleanup_temporary_profile(self) -> None:
         if not self.config or self.config.uses_custom_data_dir:
