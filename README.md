@@ -1,6 +1,6 @@
 # Zendriver ✌️
 
-> This package is a fork of the [`ultrafunkamsterdam/nodriver`](https://github.com/ultrafunkamsterdam/nodriver/), created to add new features, compile unmerged bugfixes, and increase community engagement.
+> This package is a fork of [`ultrafunkamsterdam/nodriver`](https://github.com/ultrafunkamsterdam/nodriver/), created to add new features, compile unmerged bugfixes, and increase community engagement.
 
 **Documentation:** [https://slensky.com/zendriver](https://slensky.com/zendriver)
 
