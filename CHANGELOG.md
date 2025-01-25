@@ -9,14 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Added `Tab.set_user_agent()` function for programmatically configuring the user-agent, language, and platform @stephanlensky
-- Improved a few type annotations (`Connection.send()` function now returns correctly typed values based on the provided `cdp_obj`) @stephanlensky
-
 ### Added
 
 ### Changed
 
 ### Removed
+
+## [0.3.0] - 2025-01-25
+
+### Fixed
+
+- Added `Tab.set_user_agent()` function for programmatically configuring the user-agent, language, and platform @stephanlensky
+- Improved a few type annotations (`Connection.send()` function now returns correctly typed values based on the provided `cdp_obj`) @stephanlensky
 
 ## [0.2.3] - 2024-12-14
 
