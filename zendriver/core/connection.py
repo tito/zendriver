@@ -397,8 +397,8 @@ class Connection(metaclass=CantTouchThis):
         self.target = target_info
 
     async def send(
-        self, cdp_obj: Generator[dict[str, Any], dict[str, Any], Any], _is_update=False
-    ) -> Any:
+        self, cdp_obj: Generator[dict[str, Any], dict[str, Any], T], _is_update=False
+    ) -> T:
         """
         send a protocol command. the commands are made using any of the cdp.<domain>.<method>()'s
         and is used to send custom cdp commands as well.
@@ -412,7 +412,7 @@ class Connection(metaclass=CantTouchThis):
         """
         await self.aopen()
         if self.websocket is None:
-            return
+            return  # type: ignore
         if self._owner:
             browser = self._owner
             if browser.config:
@@ -440,6 +440,7 @@ class Connection(metaclass=CantTouchThis):
                 raise e
         except Exception:
             await self.aclose()
+            raise
 
     #
     async def _register_handlers(self):

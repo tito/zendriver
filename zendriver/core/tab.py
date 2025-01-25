@@ -495,7 +495,7 @@ class Tab(Connection):
         for nid in node_ids:
             node = util.filter_recurse(doc, lambda n: n.node_id == nid)
             if not node:
-                node = await self.send(cdp.dom.resolve_node(node_id=nid))
+                node = await self.send(cdp.dom.resolve_node(node_id=nid))  # type: ignore
                 if not node:
                     continue
                 # remote_object = await self.send(cdp.dom.resolve_node(backend_node_id=node.backend_node_id))
@@ -704,7 +704,10 @@ class Tab(Connection):
 
     async def js_dumps(
         self, obj_name: str, return_by_value: Optional[bool] = True
-    ) -> dict | typing.Tuple[cdp.runtime.RemoteObject, cdp.runtime.ExceptionDetails]:
+    ) -> (
+        dict
+        | typing.Tuple[cdp.runtime.RemoteObject, cdp.runtime.ExceptionDetails | None]
+    ):
         """
         dump given js object with its properties and values as a dict
 

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Improved a few type annotations (`Connection.send()` function now returns correctly typed values based on the provided `cdp_obj`) @stephanlensky
+
 ### Added
 
 ### Changed
