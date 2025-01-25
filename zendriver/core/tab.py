@@ -1366,6 +1366,44 @@ class Tab(Connection):
             ]
         )
 
+    async def set_user_agent(
+        self,
+        user_agent: str | None = None,
+        accept_language: str | None = None,
+        platform: str | None = None,
+    ) -> None:
+        """
+        Set the user agent, accept language, and platform.
+
+        These correspond to:
+            - navigator.userAgent
+            - navigator.language
+            - navigator.platform
+
+        :param user_agent: user agent string
+        :type user_agent: str
+        :param accept_language: accept language string
+        :type accept_language: str
+        :param platform: platform string
+        :type platform: str
+        :return:
+        :rtype:
+        """
+        if not user_agent:
+            user_agent = await self.evaluate("navigator.userAgent")
+            if not user_agent:
+                raise ValueError(
+                    "Could not read existing user agent from navigator object"
+                )
+
+        await self.send(
+            cdp.network.set_user_agent_override(
+                user_agent=user_agent,
+                accept_language=accept_language,
+                platform=platform,
+            )
+        )
+
     def __call__(
         self,
         text: str | None = None,
