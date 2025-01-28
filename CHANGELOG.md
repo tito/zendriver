@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed bug in `find`/`find_element_by_text` which caused `ProtocolException` when no results were found @stephanlensky
-
 ### Added
 
 ### Changed
 
 ### Removed
+
+## [0.3.1] - 2025-01-28
+
+### Fixed
+
+- Fixed bug in `find`/`find_element_by_text` which caused `ProtocolException` when no results were found @stephanlensky
 
 ## [0.3.0] - 2025-01-25
 
