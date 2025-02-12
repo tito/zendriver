@@ -354,16 +354,19 @@ class Browser:
         self._http = HTTPApi((self.config.host, self.config.port))
         util.get_registered_instances().add(self)
         await asyncio.sleep(self.config.browser_connection_timeout)
-        for attempt in range(self.config.browser_connection_max_tries):
-            try:
-                self.info = ContraDict(await self._http.get("version"), silent=True)
-                break  # Exit loop if successful
-            except Exception:
-                if attempt == self.config.browser_connection_max_tries - 1:
-                    logger.debug("Could not start", exc_info=True)
-                await asyncio.sleep(self.config.browser_connection_timeout)
+        for _ in range(self.config.browser_connection_max_tries):
+            if await self.test_connection():
+                break
+
+            await asyncio.sleep(self.config.browser_connection_timeout)
 
         if not self.info:
+            if self._process is not None:
+                stderr = await util._read_process_stderr(self._process)
+                logger.info(
+                    "Browser stderr: %s", stderr if stderr else "No output from browser"
+                )
+
             await self.stop()
             raise Exception(
                 (
@@ -410,6 +413,17 @@ class Browser:
             await self.connection.send(cdp.target.set_discover_targets(discover=True))
         await self.update_targets()
         return self
+
+    async def test_connection(self) -> bool:
+        if not self._http:
+            raise ValueError("HTTPApi not yet initialized")
+
+        try:
+            self.info = ContraDict(await self._http.get("version"), silent=True)
+            return True
+        except Exception:
+            logger.debug("Could not start", exc_info=True)
+            return False
 
     async def grant_all_permissions(self):
         """

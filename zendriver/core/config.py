@@ -6,7 +6,7 @@ import secrets
 import sys
 import tempfile
 import zipfile
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 __all__ = [
     "Config",
@@ -40,7 +40,7 @@ class Config:
         host: str | None = AUTO,
         port: int | None = AUTO,
         expert: bool | None = AUTO,
-        **kwargs: dict,
+        **kwargs: Any,
     ):
         """
         creates a config object.

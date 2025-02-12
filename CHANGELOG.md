@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Log Chrome process output on connection failure @stephanlensky
+
 ### Changed
 
 - Default and launch changed to use `about:blank` (faster start and less bandwidth) @raycardillo
