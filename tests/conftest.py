@@ -45,36 +45,31 @@ class CreateBrowser(AbstractAsyncContextManager):
         headless: bool = True,
         sandbox: bool = TestConfig.SANDBOX,
         browser_args: list[str] | None = None,
+        browser_connection_max_tries: int = 15,
+        browser_connection_timeout: float = 1.0,
     ):
-        self.headless = headless
-        self.sandbox = sandbox
-        self.browser_args = browser_args
-        self.browser: zd.Browser | None = None
-        self.browser_pid: int | None = None
-
-    def _browser_args(self) -> list[str]:
         args = []
-        if not self.headless and TestConfig.USE_WAYLAND:
+        if not headless and TestConfig.USE_WAYLAND:
             # use wayland backend instead of x11
             args.extend(
                 ["--disable-features=UseOzonePlatform", "--ozone-platform=wayland"]
             )
-        if self.browser_args is not None:
-            args.extend(self.browser_args)
+        if browser_args is not None:
+            args.extend(browser_args)
 
-        return args
-
-    def config(self) -> zd.Config:
-        return zd.Config(
-            headless=self.headless,
-            sandbox=self.sandbox,
-            browser_args=self._browser_args(),
-            browser_connection_max_tries=10,
-            browser_connection_timeout=1,
+        self.config = zd.Config(
+            headless=headless,
+            sandbox=sandbox,
+            browser_args=args,
+            browser_connection_max_tries=browser_connection_max_tries,
+            browser_connection_timeout=browser_connection_timeout,
         )
 
+        self.browser: zd.Browser | None = None
+        self.browser_pid: int | None = None
+
     async def __aenter__(self) -> zd.Browser:
-        self.browser = await zd.start(self.config())
+        self.browser = await zd.start(self.config)
         browser_pid = self.browser._process_pid
         assert browser_pid is not None and browser_pid > 0
         await self.browser.wait(0)

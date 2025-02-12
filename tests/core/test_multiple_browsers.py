@@ -3,9 +3,7 @@ from tests.conftest import CreateBrowser
 
 
 async def test_multiple_browsers_diff_userdata(create_browser: type[CreateBrowser]):
-    config = create_browser().config()
-    config.browser_connection_timeout = 1
-    config.browser_connection_max_tries = 15
+    config = create_browser().config
 
     browser1 = await zd.start(config)
     browser2 = await zd.start(config)
