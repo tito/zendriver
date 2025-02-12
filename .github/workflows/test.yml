@@ -23,4 +23,5 @@ jobs:
       - name: Run tests
         env:
           ZENDRIVER_TEST_BROWSERS: "headless"
+          ZENDRIVER_TEST_NO_SANDBOX: "true"
         run: /bin/bash ./scripts/test.sh
