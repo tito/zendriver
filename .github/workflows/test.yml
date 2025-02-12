@@ -23,4 +23,4 @@ jobs:
       - name: Run tests
         env:
           ZENDRIVER_TEST_BROWSERS: "headless"
-        run: uv run pytest
+        run: /bin/bash ./scripts/test.sh
