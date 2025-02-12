@@ -40,6 +40,8 @@ class Config:
         host: str | None = AUTO,
         port: int | None = AUTO,
         expert: bool | None = AUTO,
+        browser_connection_timeout: float = 0.25,
+        browser_connection_max_tries: int = 10,
         **kwargs: Any,
     ):
         """
@@ -107,8 +109,8 @@ class Config:
         self.autodiscover_targets = True
         self.lang = lang
 
-        self.browser_connection_timeout = 0.25
-        self.browser_connection_max_tries = 10
+        self.browser_connection_timeout = browser_connection_timeout
+        self.browser_connection_max_tries = browser_connection_max_tries
 
         # other keyword args will be accessible by attribute
         self.__dict__.update(kwargs)

@@ -69,6 +69,8 @@ class CreateBrowser(AbstractAsyncContextManager):
             headless=self.headless,
             sandbox=self.sandbox,
             browser_args=self._browser_args(),
+            browser_connection_max_tries=10,
+            browser_connection_timeout=1,
         )
 
     async def __aenter__(self) -> zd.Browser:
