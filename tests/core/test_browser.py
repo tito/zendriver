@@ -2,11 +2,13 @@ import pytest
 from pytest_mock import MockerFixture
 
 import zendriver as zd
-from tests.browser_args import get_browser_args
+from tests.conftest import CreateBrowser
 
 
 async def test_connection_error_raises_exception_and_logs_stderr(
-    mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    create_browser: type[CreateBrowser],
+    mocker: MockerFixture,
+    caplog: pytest.LogCaptureFixture,
 ):
     mocker.patch(
         "zendriver.core.browser.Browser.test_connection",
@@ -14,11 +16,8 @@ async def test_connection_error_raises_exception_and_logs_stderr(
     )
     with caplog.at_level("INFO"):
         with pytest.raises(Exception):
-            await zd.start(
-                headless=True,
-                browser_args=get_browser_args(headless=True),
-                browser_connection_max_tries=1,
-            )
+            async with create_browser() as _:
+                pass
     assert "Browser stderr" in caplog.text
 
 
