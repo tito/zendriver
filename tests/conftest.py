@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 import pytest
 
 import zendriver as zd
+from tests.browser_args import get_browser_args
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,10 @@ NEXT_TEST_EVENT = Event()
 @pytest.fixture(params=BROWSER_MODE.fixture_params)
 async def browser(request: pytest.FixtureRequest) -> AsyncGenerator[zd.Browser, None]:
     NEXT_TEST_EVENT.clear()
+    args = get_browser_args(headless=request.param["headless"])
     browser = await zd.start(
         # use wayland for rendering instead of default X11 backend
-        browser_args=["--enable-features=UseOzonePlatform", "--ozone-platform=wayland"],
+        browser_args=args,
         headless=request.param["headless"],
     )
     browser_pid = browser._process_pid

@@ -1,5 +1,5 @@
 import zendriver as zd
-
+from tests.browser_args import get_browser_args
 
 # browser fixture not used here because this is a special case
 
@@ -7,9 +7,8 @@ import zendriver as zd
 async def test_multiple_browsers_diff_userdata():
     config = zd.Config(
         headless=True,
-        browser_args=[
-            "--enable-features=UseOzonePlatform",
-            "--ozone-platform=wayland",
+        browser_args=get_browser_args(headless=True)
+        + [
             "--window-size=800,800",
             "--wait-for-debugger-webui",
         ],
