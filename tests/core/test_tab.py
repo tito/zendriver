@@ -171,7 +171,7 @@ async def test_expect_request(browser: zd.Browser):
 
     async with tab.expect_request(sample_file("groceries.html")) as request_info:
         await tab.get(sample_file("groceries.html"))
-        req = await request_info.value
+        req = await asyncio.wait_for(request_info.value, timeout=3)
         assert type(req) is zd.cdp.network.RequestWillBeSent
         assert type(req.request) is zd.cdp.network.Request
         assert req.request.url == sample_file("groceries.html")
@@ -187,7 +187,7 @@ async def test_expect_response(browser: zd.Browser):
 
     async with tab.expect_response(sample_file("groceries.html")) as response_info:
         await tab.get(sample_file("groceries.html"))
-        resp = await response_info.value
+        resp = await asyncio.wait_for(response_info.value, timeout=3)
         assert type(resp) is zd.cdp.network.ResponseReceived
         assert type(resp.response) is zd.cdp.network.Response
         assert resp.request_id is not None
@@ -203,6 +203,6 @@ async def test_expect_download(browser: zd.Browser):
     async with tab.expect_download() as download_ex:
         await tab.get(sample_file("groceries.html"))
         await (await tab.select("#download_file")).click()
-        download = await download_ex.value
-        assert type(download) is zd.cdp.page.DownloadWillBegin
+        download = await asyncio.wait_for(download_ex.value, timeout=3)
+        assert type(download) is zd.cdp.browser.DownloadWillBegin
         assert download.url is not None
