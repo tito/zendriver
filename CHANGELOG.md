@@ -11,11 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `tab.expect_download` methods to wait for download file @3mora2
-
 ### Changed
 
 ### Removed
+
+## [0.5.0] - 2025-02-16
+
+### Added
+
+- Add `tab.expect_download` methods to wait for download file @3mora2
 
 ## [0.4.3] - 2025-02-11
 
