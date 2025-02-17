@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Deprecated `zendriver.loop()` function. You should instead use `asyncio` functions directly, for example:
+
+  ```python
+  asyncio.run(your_main_method())
+  ```
+
 ### Removed
 
 ## [0.5.0] - 2025-02-16
