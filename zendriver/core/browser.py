@@ -257,15 +257,15 @@ class Browser:
         if not self.connection:
             raise RuntimeError("Browser not yet started. use await browser.start()")
 
+        future = asyncio.get_running_loop().create_future()
+        event_type = cdp.target.TargetInfoChanged
+
+        async def get_handler(event: cdp.target.TargetInfoChanged) -> None:
+            future.set_result(event)
+
+        self.connection.add_handler(event_type, get_handler)
+
         if new_tab or new_window:
-            future = asyncio.get_running_loop().create_future()
-            event_type = cdp.target.TargetCreated
-
-            async def get_handler(event: cdp.target.TargetCreated) -> None:
-                future.set_result(event)
-
-            self.connection.add_handler(event_type, get_handler)
-
             # create new target using the browser session
             target_id = await self.connection.send(
                 cdp.target.create_target(
@@ -280,16 +280,15 @@ class Browser:
                 )
             )
             connection.browser = self
-
-            await asyncio.wait_for(future, 10)
-            self.connection.remove_handlers(event_type, get_handler)
-
         else:
             # first tab from browser.tabs
             connection = next(filter(lambda item: item.type_ == "page", self.targets))
             # use the tab to navigate to new url
             await connection.send(cdp.page.navigate(url))
             connection.browser = self
+
+        await asyncio.wait_for(future, 10)
+        self.connection.remove_handlers(event_type, get_handler)
 
         return connection
 
