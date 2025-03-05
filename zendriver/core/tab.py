@@ -908,13 +908,17 @@ class Tab(Connection):
         :return:
         :rtype:
         :raises: asyncio.TimeoutError
+        :raises: RuntimeError
         """
+
+        if not self.browser or not self.browser.connection:
+            raise RuntimeError("Browser not yet started. use await browser.start()")
 
         future = asyncio.get_running_loop().create_future()
         event_type = cdp.target.TargetDestroyed
 
-        async def close_handler(event: event_type) -> None:
-            if event.target_id == self.target.target_id:
+        async def close_handler(event: cdp.target.TargetDestroyed) -> None:
+            if self.target and event.target_id == self.target.target_id:
                 future.set_result(event)
 
         self.browser.connection.add_handler(event_type, close_handler)

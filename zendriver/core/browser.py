@@ -261,7 +261,7 @@ class Browser:
             future = asyncio.get_running_loop().create_future()
             event_type = cdp.target.TargetCreated
 
-            async def get_handler(event: event_type) -> None:
+            async def get_handler(event: cdp.target.TargetCreated) -> None:
                 future.set_result(event)
 
             self.connection.add_handler(event_type, get_handler)
