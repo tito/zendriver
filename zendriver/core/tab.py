@@ -907,9 +907,23 @@ class Tab(Connection):
         close the current target (ie: tab,window,page)
         :return:
         :rtype:
+        :raises: asyncio.TimeoutError
         """
+
+        future = asyncio.get_running_loop().create_future()
+        event_type = cdp.target.TargetDestroyed
+
+        async def close_handler(event: event_type) -> None:
+            if event.target_id == self.target.target_id:
+                future.set_result(event)
+
+        self.browser.connection.add_handler(event_type, close_handler)
+
         if self.target and self.target.target_id:
             await self.send(cdp.target.close_target(target_id=self.target.target_id))
+
+        await asyncio.wait_for(future, 10)
+        self.browser.connection.remove_handlers(event_type, close_handler)
 
     async def get_window(self) -> Tuple[cdp.browser.WindowID, cdp.browser.Bounds]:
         """
