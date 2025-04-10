@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed type annotation of `Element.children` @slensky
-
 ### Added
 
 ### Changed
 
 ### Removed
+
+## [0.5.2] - 2025-04-09
+
+### Fixed
+
+- Fixed type annotation of `Element.children` @slensky
 
 ## [0.5.1] - 2025-02-16
 
